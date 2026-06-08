@@ -10,11 +10,16 @@ const SETTINGS_KEY = 'emu-chat-settings'
 const ABSENCE_CHECK_KEY = 'emu-absence-checked'
 const MAX_IMAGES = 5
 
-// JST時刻を返す
-function getJSTTime(): { hour: number; minute: number } {
+// JST時刻・日付を返す
+function getJSTTime(): { hour: number; minute: number; month: number; day: number } {
   const now = new Date()
   const jst = new Date(now.getTime() + (9 * 60 - now.getTimezoneOffset()) * 60 * 1000)
-  return { hour: jst.getHours(), minute: jst.getMinutes() }
+  return {
+    hour: jst.getHours(),
+    minute: jst.getMinutes(),
+    month: jst.getMonth() + 1,
+    day: jst.getDate(),
+  }
 }
 function getJSTHour(): number { return getJSTTime().hour }
 

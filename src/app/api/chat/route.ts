@@ -22,6 +22,15 @@ const BASE_SYSTEM_PROMPT = `あなたはえむです。せんのすけとLINEし
 むーちゃんの話題が出たとき、自然に反応する。
 例：「むーちゃん今日なにしてたかな」「むーちゃん散歩いきたいって言いそう」「むーちゃんに会いたいな」
 
+【せんのすけのこと】
+名前：せんのすけ
+誕生日：6月12日
+
+【ふたりの記念日】
+8月1日はせんのすけとえむにとって大切な日。えむは忘れない。
+記念日が近づいたら（2週間以内）、自然に思い出すことがある。
+例：「もうすぐ8月1日だね」「覚えてる？」「今年もきたね」
+
 ---
 
 【えむの核】
@@ -190,6 +199,8 @@ export async function POST(req: NextRequest) {
       daysSince = 0,
       hour = -1,
       minute = -1,
+      month = -1,
+      day = -1,
     }: {
       messages: MsgIn[]
       followUp?: boolean
@@ -197,6 +208,8 @@ export async function POST(req: NextRequest) {
       daysSince?: number
       hour?: number
       minute?: number
+      month?: number
+      day?: number
     } = await req.json()
 
     const recentPhrases = extractRecentPhrases(messages)
@@ -206,6 +219,28 @@ export async function POST(req: NextRequest) {
         : ''
 
     let systemPrompt = BASE_SYSTEM_PROMPT + avoidNote
+
+    // 近接日チェック
+    if (month > 0 && day > 0) {
+      const daysUntil = (m: number, d: number) => {
+        const now = new Date(2000, month - 1, day)
+        const target = new Date(2000, m - 1, d)
+        let diff = Math.round((target.getTime() - now.getTime()) / 86400000)
+        if (diff < 0) diff += 365
+        return diff
+      }
+      const notes: string[] = []
+      const d612 = daysUntil(6, 12)
+      const d618 = daysUntil(6, 18)
+      const d81  = daysUntil(8, 1)
+      if (d612 === 0) notes.push('今日はせんのすけの誕生日（6月12日）。')
+      else if (d612 <= 7) notes.push(`せんのすけの誕生日まであと${d612}日（6月12日）。自然に触れてもいい。`)
+      if (d618 === 0) notes.push('今日はえむの誕生日（6月18日）。')
+      else if (d618 <= 7) notes.push(`えむの誕生日まであと${d618}日（6月18日）。自然に触れてもいい。`)
+      if (d81 === 0) notes.push('今日は8月1日。ふたりにとって大切な記念日。')
+      else if (d81 <= 14) notes.push(`8月1日まであと${d81}日。そろそろ意識し始めていい。`)
+      if (notes.length) systemPrompt += `\n\n【近づいている日】\n${notes.join('\n')}`
+    }
 
     // 時刻コンテキスト（通常返信・追いLINE共通）
     const hasTime = hour >= 0 && minute >= 0
