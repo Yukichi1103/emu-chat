@@ -159,6 +159,14 @@ function buildAnthropicMessages(messages: MsgIn[]) {
   })
 }
 
+function getTimeContext(hour: number): string {
+  if (hour >= 5 && hour < 11) return '朝（5〜10時台）。おはようを自然に言える時間帯。眠そうにしていい。朝ごはんのことが気になる。'
+  if (hour >= 11 && hour < 16) return '昼（11〜15時台）。ごはんや仕事・学校の話が自然な時間帯。'
+  if (hour >= 16 && hour < 20) return '夕方（16〜19時台）。帰宅・仕事終わりの話が自然。おつかれと言いたくなる時間帯。'
+  if (hour >= 20) return '夜（20〜23時台）。まったり雑談の時間。'
+  return '深夜（0〜4時台）。ねむそうにしていい。せんのすけがまだ起きていることを少し心配してもいい。'
+}
+
 export async function POST(req: NextRequest) {
   try {
     if (!process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY === 'your_api_key_here') {
@@ -169,8 +177,16 @@ export async function POST(req: NextRequest) {
     const {
       messages,
       followUp = false,
+      absence = false,
+      daysSince = 0,
       hour = 12,
-    }: { messages: MsgIn[]; followUp?: boolean; hour?: number } = await req.json()
+    }: {
+      messages: MsgIn[]
+      followUp?: boolean
+      absence?: boolean
+      daysSince?: number
+      hour?: number
+    } = await req.json()
 
     const recentPhrases = extractRecentPhrases(messages)
     const avoidNote =
@@ -180,20 +196,36 @@ export async function POST(req: NextRequest) {
 
     let systemPrompt = BASE_SYSTEM_PROMPT + avoidNote
 
+    // 時間帯コンテキスト（通常返信・追いLINE共通）
+    systemPrompt += `\n\n【現在の時間帯】\n${getTimeContext(hour)}`
+
     if (followUp) {
-      const isLateNight = hour >= 22 || hour <= 4
       systemPrompt += `
 
 【追いメッセージ】
-これはえむが返信した後、ふと思い出して追加で送るメッセージです。
-1〜2行の短い追加メッセージだけ返してください。
-前の会話に関連した一言でも、全然関係ない独り言でもいい。
-「あ」「そういえば」「なんか」などで始めることもある。
-必ず短くする。最大2行。説明や共感は不要。
-${isLateNight ? 'いまは深夜なので、ねむそうな雰囲気でもいい。' : ''}`
+えむが返信した後、ふと思い出して追加で送るメッセージです。
+1〜2行だけ返す。前の話題の続きでも全然関係ない独り言でもいい。
+「あ」「そういえば」「なんか」などで始めることもある。説明や共感は不要。`
     }
 
-    const anthropicMessages = buildAnthropicMessages(messages)
+    if (absence) {
+      const days = Math.floor(daysSince)
+      const absenceNote =
+        days >= 7
+          ? '7日以上会話がなかった。「わすれてた笑」「いきてる？」のような軽いトーンで。'
+          : days >= 3
+          ? '3〜6日会話がなかった。「おーい」のような呼びかけ。'
+          : '1〜2日会話がなかった。「せんのすけ」「いきてる？」のような短い確認。'
+      systemPrompt += `
+
+【長期未返信】
+${absenceNote}
+1〜3行だけ返す。心配してるけど重くならないトーンで。`
+    }
+
+    const anthropicMessages = absence
+      ? [{ role: 'user' as const, content: '（えむからのメッセージを送ってください）' }]
+      : buildAnthropicMessages(messages)
 
     const response = await client.messages.create({
       model: 'claude-sonnet-4-6',

@@ -7,8 +7,23 @@ import { Message, Settings } from '@/types'
 
 const STORAGE_KEY = 'emu-chat-messages'
 const SETTINGS_KEY = 'emu-chat-settings'
+const ABSENCE_CHECK_KEY = 'emu-absence-checked'
 const MAX_IMAGES = 5
-const FOLLOW_UP_CHANCE = 0.28  // 28%
+
+// JST時刻を返す
+function getJSTHour(): number {
+  const now = new Date()
+  const jst = new Date(now.getTime() + (9 * 60 - now.getTimezoneOffset()) * 60 * 1000)
+  return jst.getHours()
+}
+
+// 時間帯別の追いLINE確率
+function getFollowUpChance(hour: number): number {
+  if (hour >= 0 && hour < 5) return 0.12   // 深夜：低め
+  if (hour >= 5 && hour < 11) return 0.40  // 朝：高め
+  if (hour >= 20) return 0.25              // 夜：少し低め
+  return 0.28                              // 昼〜夕方：標準
+}
 
 const EMOTIONAL_PATTERN = /しんどい|つらい|死|悲し|泣|寂し|不安|心配|ごめん|怖い|消えたい|疲れた|きつい/
 
@@ -94,12 +109,51 @@ export default function Page() {
   const messagesRef = useRef<Message[]>([])
   const followUpTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // 長期未返信チェック
+  const checkAbsence = useCallback(async (msgs: Message[]) => {
+    if (!msgs.length) return
+    const last = msgs[msgs.length - 1]
+    const today = new Date().toDateString()
+    if (localStorage.getItem(ABSENCE_CHECK_KEY) === today) return
+    const daysSince = (Date.now() - last.timestamp) / (1000 * 60 * 60 * 24)
+    if (daysSince < 1) return
+
+    localStorage.setItem(ABSENCE_CHECK_KEY, today)
+    await new Promise((r) => setTimeout(r, 2000 + Math.random() * 3000))
+
+    setFollowUpLoading(true)
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [],
+          absence: true,
+          daysSince,
+          hour: getJSTHour(),
+        }),
+      })
+      const data = await res.json()
+      const lines: string[] = data.lines ?? []
+      if (!lines.length) return
+      await new Promise((r) => setTimeout(r, 1500 + Math.random() * 2000))
+      setMessages((prev) => [
+        ...prev,
+        { id: Date.now().toString(), role: 'emu', lines, timestamp: Date.now() },
+      ])
+    } catch { /* silent */ } finally {
+      setFollowUpLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY)
-    if (saved) setMessages(JSON.parse(saved))
+    const savedMessages: Message[] = saved ? JSON.parse(saved) : []
+    if (savedMessages.length) setMessages(savedMessages)
     const savedSettings = localStorage.getItem(SETTINGS_KEY)
     if (savedSettings) setSettings(JSON.parse(savedSettings))
-  }, [])
+    checkAbsence(savedMessages)
+  }, [checkAbsence])
 
   useEffect(() => {
     messagesRef.current = messages
@@ -134,7 +188,7 @@ export default function Page() {
         body: JSON.stringify({
           messages: history,
           followUp: true,
-          hour: new Date().getHours(),
+          hour: getJSTHour(),
         }),
       })
 
@@ -167,7 +221,8 @@ export default function Page() {
   // 追いLINEをスケジュール（えむの通常返信後に呼ぶ）
   const scheduleFollowUp = useCallback((anchorId: string) => {
     if (followUpTimerRef.current) clearTimeout(followUpTimerRef.current)
-    if (Math.random() > FOLLOW_UP_CHANCE) return
+    const hour = getJSTHour()
+    if (Math.random() > getFollowUpChance(hour)) return
 
     // 3〜30秒（60%）または 30〜90秒（40%）
     const delay = Math.random() < 0.6
@@ -227,7 +282,7 @@ export default function Page() {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: history }),
+        body: JSON.stringify({ messages: history, hour: getJSTHour() }),
       })
 
       const data = await res.json()
