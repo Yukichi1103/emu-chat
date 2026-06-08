@@ -9,6 +9,27 @@ const STORAGE_KEY = 'emu-chat-messages'
 const SETTINGS_KEY = 'emu-chat-settings'
 const MAX_IMAGES = 5
 
+const EMOTIONAL_PATTERN = /しんどい|つらい|死|悲し|泣|寂し|不安|心配|ごめん|怖い|消えたい|疲れた|きつい/
+
+function calcTypingDelay(lines: string[], userText: string): number {
+  const totalChars = lines.join('').length
+  const isEmotional = EMOTIONAL_PATTERN.test(userText)
+  const rand = () => Math.random()
+
+  let ms: number
+  if (totalChars <= 8) {
+    ms = 3000 + rand() * 3000        // 3〜6秒
+  } else if (totalChars <= 25) {
+    ms = 5000 + rand() * 5000        // 5〜10秒
+  } else {
+    ms = 10000 + rand() * 8000       // 10〜18秒
+  }
+
+  if (isEmotional) ms += 3000 + rand() * 4000  // 感情的なら+3〜7秒
+
+  return Math.min(ms, 20000)
+}
+
 async function compressImage(file: File, maxPx = 800, quality = 0.65): Promise<string> {
   return new Promise((resolve) => {
     const reader = new FileReader()
@@ -115,10 +136,15 @@ export default function Page() {
       })
 
       const data = await res.json()
+      const lines: string[] = data.lines ?? ['ちょっとまって']
+
+      // タイピング待機（APIレスポンスを手元に持ちつつ、えむが打ってる時間を演出）
+      await new Promise((r) => setTimeout(r, calcTypingDelay(lines, text)))
+
       const emuMsg: Message = {
         id: (Date.now() + 1).toString(),
         role: 'emu',
-        lines: data.lines ?? ['ちょっとまって'],
+        lines,
         timestamp: Date.now(),
       }
       setMessages((prev) => [...prev, emuMsg])
