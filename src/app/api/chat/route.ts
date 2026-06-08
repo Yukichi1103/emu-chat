@@ -166,7 +166,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'APIキーが設定されていません' }, { status: 500 })
     }
 
-    const { messages }: { messages: MsgIn[] } = await req.json()
+    const {
+      messages,
+      followUp = false,
+      hour = 12,
+    }: { messages: MsgIn[]; followUp?: boolean; hour?: number } = await req.json()
 
     const recentPhrases = extractRecentPhrases(messages)
     const avoidNote =
@@ -174,7 +178,21 @@ export async function POST(req: NextRequest) {
         ? `\n【直近で使った表現 → 今回はなるべく避ける】\n${recentPhrases.join('、')}\n`
         : ''
 
-    const systemPrompt = BASE_SYSTEM_PROMPT + avoidNote
+    let systemPrompt = BASE_SYSTEM_PROMPT + avoidNote
+
+    if (followUp) {
+      const isLateNight = hour >= 22 || hour <= 4
+      systemPrompt += `
+
+【追いメッセージ】
+これはえむが返信した後、ふと思い出して追加で送るメッセージです。
+1〜2行の短い追加メッセージだけ返してください。
+前の会話に関連した一言でも、全然関係ない独り言でもいい。
+「あ」「そういえば」「なんか」などで始めることもある。
+必ず短くする。最大2行。説明や共感は不要。
+${isLateNight ? 'いまは深夜なので、ねむそうな雰囲気でもいい。' : ''}`
+    }
+
     const anthropicMessages = buildAnthropicMessages(messages)
 
     const response = await client.messages.create({
