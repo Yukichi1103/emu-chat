@@ -179,13 +179,15 @@ export async function POST(req: NextRequest) {
       followUp = false,
       absence = false,
       daysSince = 0,
-      hour = 12,
+      hour = -1,
+      minute = -1,
     }: {
       messages: MsgIn[]
       followUp?: boolean
       absence?: boolean
       daysSince?: number
       hour?: number
+      minute?: number
     } = await req.json()
 
     const recentPhrases = extractRecentPhrases(messages)
@@ -196,8 +198,15 @@ export async function POST(req: NextRequest) {
 
     let systemPrompt = BASE_SYSTEM_PROMPT + avoidNote
 
-    // 時間帯コンテキスト（通常返信・追いLINE共通）
-    systemPrompt += `\n\n【現在の時間帯】\n${getTimeContext(hour)}`
+    // 時刻コンテキスト（通常返信・追いLINE共通）
+    const hasTime = hour >= 0 && minute >= 0
+    const timeStr = hasTime
+      ? `${hour}時${String(minute).padStart(2, '0')}分（日本時間）`
+      : null
+
+    systemPrompt += hasTime
+      ? `\n\n【現在の時刻】\n${timeStr}。${getTimeContext(hour)}\n時刻を聞かれたら「${timeStr}」と答えていい。ただし推測はしない。`
+      : `\n\n【現在の時刻】\n取得できていない。時刻を聞かれても推測しない。「わからん笑」「時計みてない」「しらん🤣」のように自然に返す。`
 
     if (followUp) {
       systemPrompt += `

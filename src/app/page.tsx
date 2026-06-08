@@ -11,11 +11,12 @@ const ABSENCE_CHECK_KEY = 'emu-absence-checked'
 const MAX_IMAGES = 5
 
 // JST時刻を返す
-function getJSTHour(): number {
+function getJSTTime(): { hour: number; minute: number } {
   const now = new Date()
   const jst = new Date(now.getTime() + (9 * 60 - now.getTimezoneOffset()) * 60 * 1000)
-  return jst.getHours()
+  return { hour: jst.getHours(), minute: jst.getMinutes() }
 }
+function getJSTHour(): number { return getJSTTime().hour }
 
 // 時間帯別の追いLINE確率
 function getFollowUpChance(hour: number): number {
@@ -130,7 +131,7 @@ export default function Page() {
           messages: [],
           absence: true,
           daysSince,
-          hour: getJSTHour(),
+          ...getJSTTime(),
         }),
       })
       const data = await res.json()
@@ -188,7 +189,7 @@ export default function Page() {
         body: JSON.stringify({
           messages: history,
           followUp: true,
-          hour: getJSTHour(),
+          ...getJSTTime(),
         }),
       })
 
@@ -282,7 +283,7 @@ export default function Page() {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: history, hour: getJSTHour() }),
+        body: JSON.stringify({ messages: history, ...getJSTTime() }),
       })
 
       const data = await res.json()
